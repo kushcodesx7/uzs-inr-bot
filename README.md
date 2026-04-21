@@ -9,7 +9,7 @@ Runs entirely on GitHub Actions — no server, no cost.
 ## How it works
 
 - Schedule: `0 */4 * * *` (every 4 hours, UTC)
-- Rate source: `https://open.er-api.com/v6/latest/UZS` (free, no key, mid-market)
+- Rate source: [fawazahmed0/currency-api](https://github.com/fawazahmed0/exchange-api) via jsDelivr (free, no key, aggregates multiple sources for near-Google/Wise accuracy), with a `pages.dev` fallback
 - State: `last_rate.json` + `history.xlsx`, committed back to the repo after each run
 - Alert rule: Telegram message sent only when `|change| > ₹500`
 - First run always sends a baseline message so you know it's wired up
