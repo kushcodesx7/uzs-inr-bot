@@ -20,9 +20,9 @@ RATE_API_URLS = [
     "https://latest.currency-api.pages.dev/v1/currencies/uzs.json",
 ]
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
-CRON_HOURS_UTC = [0, 4, 8, 12, 16, 20]
+CRON_INTERVAL_MIN = 30
 DIVIDER = "━━━━━━━━━━━━━━━━"
-CHECKS_PER_DAY = 6
+CHECKS_PER_DAY = (24 * 60) // CRON_INTERVAL_MIN
 
 HEADERS = [
     "Date",
@@ -249,13 +249,10 @@ def write_dashboard_data(records, analytics, current_rate, now):
 
 
 def next_check_display(now, tz):
-    now_utc = now.astimezone(timezone.utc)
-    for h in CRON_HOURS_UTC:
-        candidate = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
-        if candidate > now_utc:
-            return candidate.astimezone(tz).strftime("%-I:%M %p")
-    tomorrow = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    return tomorrow.astimezone(tz).strftime("%-I:%M %p")
+    now_utc = now.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    minutes_to_add = CRON_INTERVAL_MIN - (now_utc.minute % CRON_INTERVAL_MIN)
+    next_run = now_utc + timedelta(minutes=minutes_to_add)
+    return next_run.astimezone(tz).strftime("%-I:%M %p")
 
 
 def send_telegram(token, chat_id, text):
