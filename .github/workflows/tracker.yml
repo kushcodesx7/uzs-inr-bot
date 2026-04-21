@@ -1,0 +1,55 @@
+name: UZS to INR tracker
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uzs-inr-tracker
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests openpyxl
+
+      - name: Run tracker
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          AMOUNT_UZS: ${{ secrets.AMOUNT_UZS }}
+        run: python bot.py
+
+      - name: Commit state files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add last_rate.json history.xlsx
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+          else
+            git commit -m "chore: update tracker state [skip ci]"
+            for i in 1 2 3 4; do
+              if git push; then
+                exit 0
+              fi
+              echo "Push failed, retrying..."
+              sleep $((2 ** i))
+            done
+            echo "Push failed after retries" >&2
+            exit 1
+          fi
