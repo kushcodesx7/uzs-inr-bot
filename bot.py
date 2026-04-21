@@ -1,7 +1,9 @@
+$ cat bot.py
+
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -13,8 +15,13 @@ STATE_FILE = Path("last_rate.json")
 HISTORY_FILE = Path("history.xlsx")
 TZ = ZoneInfo("Asia/Tashkent")
 ALERT_THRESHOLD_INR = 500.0
-API_URL = "https://open.er-api.com/v6/latest/UZS"
+RATE_API_URLS = [
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/uzs.json",
+    "https://latest.currency-api.pages.dev/v1/currencies/uzs.json",
+]
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+CRON_HOURS_UTC = [0, 4, 8, 12, 16, 20]
+DIVIDER = "━━━━━━━━━━━━━━━━"
 
 HEADERS = [
     "Date",
@@ -30,30 +37,44 @@ GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="so
 RED_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
 
 
-def format_indian(n):
+def format_indian(n, decimals=2):
     sign = "-" if n < 0 else ""
     n = abs(float(n))
-    int_part, dec_part = f"{n:.2f}".split(".")
+    if decimals == 0:
+        int_part = f"{round(n):d}"
+        dec_part = ""
+    else:
+        int_part, dec_part = f"{n:.{decimals}f}".split(".")
     if len(int_part) <= 3:
-        return f"{sign}{int_part}.{dec_part}"
-    last3 = int_part[-3:]
-    rest = int_part[:-3]
-    groups = []
-    while len(rest) > 2:
-        groups.insert(0, rest[-2:])
-        rest = rest[:-2]
-    if rest:
-        groups.insert(0, rest)
-    return f"{sign}{','.join(groups)},{last3}.{dec_part}"
+        out = f"{sign}{int_part}"
+    else:
+        last3 = int_part[-3:]
+        rest = int_part[:-3]
+        groups = []
+        while len(rest) > 2:
+            groups.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            groups.insert(0, rest)
+        out = f"{sign}{','.join(groups)},{last3}"
+    return f"{out}.{dec_part}" if dec_part else out
 
 
 def fetch_rate():
-    resp = requests.get(API_URL, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("result") != "success":
-        raise RuntimeError(f"API returned non-success result: {data.get('result')}")
-    return float(data["rates"]["INR"])
+    last_err = None
+    for url in RATE_API_URLS:
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            inr = data.get("uzs", {}).get("inr")
+            if inr is None:
+                raise RuntimeError(f"INR rate missing in response from {url}")
+            return float(inr)
+        except Exception as e:
+            last_err = e
+            print(f"Rate fetch failed from {url}: {e}", file=sys.stderr)
+    raise RuntimeError(f"All rate endpoints failed: {last_err}")
 
 
 def load_state():
@@ -97,6 +118,33 @@ def log_row(wb, date_str, time_str, rate, inr_amount, change, pct_change, direct
     wb.save(HISTORY_FILE)
 
 
+def todays_range(current_inr, today_str):
+    high = low = current_inr
+    if not HISTORY_FILE.exists():
+        return high, low
+    wb = load_workbook(HISTORY_FILE, read_only=True)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or len(row) < 4:
+            continue
+        date_val, inr_val = row[0], row[3]
+        if date_val == today_str and isinstance(inr_val, (int, float)):
+            high = max(high, inr_val)
+            low = min(low, inr_val)
+    wb.close()
+    return high, low
+
+
+def next_check_display(now, tz):
+    now_utc = now.astimezone(timezone.utc)
+    for h in CRON_HOURS_UTC:
+        candidate = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
+        if candidate > now_utc:
+            return candidate.astimezone(tz).strftime("%-I:%M %p")
+    tomorrow = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return tomorrow.astimezone(tz).strftime("%-I:%M %p")
+
+
 def send_telegram(token, chat_id, text):
     url = TELEGRAM_API.format(token=token)
     resp = requests.post(
@@ -113,29 +161,44 @@ def send_telegram(token, chat_id, text):
     return resp.json()
 
 
-def build_update_message(rate, inr_amount, change, pct_change, direction, prev):
-    emoji = "📈" if direction == "UP" else "📉"
-    sign = "+" if change >= 0 else "-"
-    prev_time = prev.get("timestamp_display", "—")
-    return "\n".join([
-        f"{emoji} <b>UZS → INR update</b>",
+def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check):
+    date_display = now.strftime("%d %b %Y, %-I:%M %p")
+    lines = [
+        "💱 <b>UZS → INR Tracker</b>",
+        DIVIDER,
+        f"📅 {date_display}",
         "",
-        f"Rate: <code>1 UZS = ₹{rate:.8f}</code>",
-        f"Current: <b>₹{format_indian(inr_amount)}</b>",
-        f"Change: <b>{sign}₹{format_indian(abs(change))}</b> ({sign}{abs(pct_change):.2f}%)",
-        f"Previous: ₹{format_indian(prev['inr_amount'])} at {prev_time}",
-    ])
-
-
-def build_baseline_message(rate, inr_amount):
-    return "\n".join([
-        "🟢 <b>UZS → INR tracker started</b>",
+        f"You'd get: <b>₹{format_indian(inr_amount, 0)}</b>",
         "",
-        f"Rate: <code>1 UZS = ₹{rate:.8f}</code>",
-        f"Current: <b>₹{format_indian(inr_amount)}</b>",
+    ]
+    if direction == "START":
+        lines.append("🟢 <b>Baseline set</b>")
+        lines.append(
+            f"Alerts fire when change exceeds ₹{format_indian(ALERT_THRESHOLD_INR, 0)}."
+        )
+    else:
+        emoji = {"UP": "📈", "DOWN": "📉", "FLAT": "➖"}.get(direction, "")
+        sign = "+" if change >= 0 else "-"
+        label = "UP" if direction == "UP" else ("DOWN" if direction == "DOWN" else "FLAT")
+        lines.append(f"{emoji} <b>{label}</b> from last check")
+        lines.append(
+            f"Change: {sign}₹{format_indian(abs(change), 0)} ({sign}{abs(pct_change):.2f}%)"
+        )
+        lines.append("")
+        prev_time = prev.get("timestamp_time", "—")
+        lines.append(
+            f"Last check: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time})"
+        )
+    lines += [
         "",
-        f"Alerts will fire when change exceeds ₹{format_indian(ALERT_THRESHOLD_INR)}.",
-    ])
+        "📊 <b>Today's range:</b>",
+        f"High: ₹{format_indian(today_high, 0)}",
+        f"Low:  ₹{format_indian(today_low, 0)}",
+        "",
+        DIVIDER,
+        f"Next check: {next_check}",
+    ]
+    return "\n".join(lines)
 
 
 def main():
@@ -153,7 +216,8 @@ def main():
     now = datetime.now(TZ)
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M:%S")
-    display_ts = now.strftime("%Y-%m-%d %H:%M %Z")
+    time_display = now.strftime("%-I:%M %p")
+    full_display = now.strftime("%Y-%m-%d %H:%M %Z")
 
     prev = load_state()
 
@@ -161,8 +225,6 @@ def main():
         direction = "START"
         change = 0.0
         pct_change = 0.0
-        send_telegram(token, chat_id, build_baseline_message(rate, inr_amount))
-        print(f"[{display_ts}] Baseline: rate={rate:.8f}, INR={inr_amount:.2f}")
     else:
         change = inr_amount - prev["inr_amount"]
         base = prev["inr_amount"] or 1.0
@@ -173,21 +235,27 @@ def main():
             direction = "DOWN"
         else:
             direction = "FLAT"
-        if abs(change) > ALERT_THRESHOLD_INR:
-            msg = build_update_message(rate, inr_amount, change, pct_change, direction, prev)
-            send_telegram(token, chat_id, msg)
-            print(f"[{display_ts}] Alert sent: change={change:+.2f} ({pct_change:+.2f}%)")
-        else:
-            print(f"[{display_ts}] No alert: change={change:+.2f} under threshold ₹{ALERT_THRESHOLD_INR:.0f}")
 
     wb = open_workbook()
     log_row(wb, date_str, time_str, rate, inr_amount, change, pct_change, direction)
+
+    high, low = todays_range(inr_amount, date_str)
+    next_check = next_check_display(now, TZ)
+
+    should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
+    if should_send:
+        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check)
+        send_telegram(token, chat_id, msg)
+        print(f"[{full_display}] Sent ({direction}): change={change:+.2f}")
+    else:
+        print(f"[{full_display}] No alert: change={change:+.2f} under ₹{ALERT_THRESHOLD_INR:.0f}")
 
     save_state({
         "rate": rate,
         "inr_amount": inr_amount,
         "timestamp": now.isoformat(),
-        "timestamp_display": display_ts,
+        "timestamp_display": full_display,
+        "timestamp_time": time_display,
     })
 
 
