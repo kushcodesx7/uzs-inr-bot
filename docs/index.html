@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UZS → INR Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --fg: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .updated { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .advisory {
+    background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--blue);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 20px;
+  }
+  .advisory.convert { border-left-color: var(--green); }
+  .advisory.convert-soft { border-left-color: var(--yellow); }
+  .advisory.hold { border-left-color: var(--blue); }
+  .advisory.hold-risky { border-left-color: var(--red); }
+  .advisory .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .advisory .msg { font-size: 16px; margin-top: 4px; }
+  .disclaimer {
+    font-size: 11px; color: var(--muted); margin-top: 8px; font-style: italic;
+  }
+  .chart-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 20px; height: 420px;
+  }
+  .controls { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .controls button {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .controls button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  table {
+    width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { background: #1c232b; color: var(--muted); font-weight: 500; }
+  td.up { color: var(--green); }
+  td.down { color: var(--red); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
+  .err { color: var(--red); padding: 20px; text-align: center; }
+  @media (max-width: 600px) {
+    .card .value { font-size: 18px; }
+    h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>💱 UZS → INR Tracker</h1>
+  <div class="updated" id="updated">Loading…</div>
+
+  <div id="content" style="display:none">
+    <div class="grid" id="stats"></div>
+
+    <div class="advisory" id="advisory">
+      <div class="tag">Decision support (heuristic, not a forecast)</div>
+      <div class="msg" id="advisory-msg"></div>
+      <div class="disclaimer">
+        FX moves are close to a random walk in the short term. These signals
+        describe where we are relative to recent history — they do not predict
+        the future. Use your own judgment.
+      </div>
+    </div>
+
+    <div class="controls" id="range-controls">
+      <button data-range="24h">24h</button>
+      <button data-range="7d" class="active">7d</button>
+      <button data-range="30d">30d</button>
+      <button data-range="all">All</button>
+    </div>
+
+    <div class="chart-box"><canvas id="chart"></canvas></div>
+
+    <h3 style="margin: 24px 0 10px">Recent checks</h3>
+    <div style="overflow-x: auto">
+      <table id="history-table">
+        <thead>
+          <tr><th>When</th><th>Rate (1 UZS)</th><th>INR</th><th>Δ INR</th><th>Δ %</th><th>Dir</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="err" class="err" style="display:none"></div>
+
+  <footer>
+    Data refreshes every 4 hours. Source:
+    <a href="https://github.com/fawazahmed0/exchange-api" style="color:var(--blue)">fawazahmed0/currency-api</a>.
+  </footer>
+</div>
+
+<script>
+const INR = n => n == null ? '—' :
+  '₹' + Math.round(n).toLocaleString('en-IN');
+const INRf = (n, d=2) => n == null ? '—' :
+  '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function card(label, value, sub = '') {
+  return `<div class="card"><div class="label">${label}</div>
+    <div class="value">${value}</div>
+    ${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+}
+
+let chart = null;
+let fullHistory = [];
+let analytics = null;
+
+function renderChart(range) {
+  let data = fullHistory.slice();
+  const now = Date.now();
+  const cutoff = {
+    '24h': 24 * 3600 * 1000,
+    '7d':  7 * 24 * 3600 * 1000,
+    '30d': 30 * 24 * 3600 * 1000,
+    'all': Infinity,
+  }[range];
+  if (cutoff !== Infinity) {
+    data = data.filter(r => (now - new Date(r.date + 'T' + r.time).getTime()) <= cutoff);
+  }
+  const labels = data.map(r => r.date + ' ' + r.time.slice(0,5));
+  const inrs = data.map(r => r.inr);
+
+  // moving average (simple, window scaled to range)
+  const win = Math.max(2, Math.min(24, Math.floor(data.length / 8)));
+  const ma = inrs.map((_, i) => {
+    if (i < win - 1) return null;
+    const slice = inrs.slice(i - win + 1, i + 1);
+    return slice.reduce((a,b) => a+b, 0) / slice.length;
+  });
+
+  // Bollinger bands (±2σ over same window)
+  const upper = ma.map((m, i) => {
+    if (m == null) return null;
+    const slice = inrs.slice(i - win + 1, i + 1);
+    const mean = m;
+    const variance = slice.reduce((a,b) => a + (b-mean)**2, 0) / slice.length;
+    return mean + 2 * Math.sqrt(variance);
+  });
+  const lower = ma.map((m, i) => {
+    if (m == null) return null;
+    const slice = inrs.slice(i - win + 1, i + 1);
+    const mean = m;
+    const variance = slice.reduce((a,b) => a + (b-mean)**2, 0) / slice.length;
+    return mean - 2 * Math.sqrt(variance);
+  });
+
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'INR value',
+          data: inrs,
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88,166,255,0.1)',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.2,
+          fill: false,
+        },
+        {
+          label: `Moving avg (${win})`,
+          data: ma,
+          borderColor: '#d29922',
+          borderWidth: 1.5,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: 'Upper band (+2σ)',
+          data: upper,
+          borderColor: 'rgba(63,185,80,0.5)',
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: 'Lower band (-2σ)',
+          data: lower,
+          borderColor: 'rgba(248,81,73,0.5)',
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: '-1',
+          backgroundColor: 'rgba(88,166,255,0.05)',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e6edf3' } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${INRf(ctx.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#8b949e', callback: v => INR(v) }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      },
+    },
+  });
+}
+
+function renderStats(payload) {
+  const a = payload.analytics || {};
+  const cur = payload.analytics ? payload.analytics.current_inr : null;
+  const zDisplay = a.zscore == null ? '—' : `${a.zscore >= 0 ? '+' : ''}${a.zscore.toFixed(2)}σ`;
+  const trend = a.slope_7d == null ? '—' :
+    (a.slope_7d > 0 ? '↗ rising' : a.slope_7d < 0 ? '↘ falling' : '→ flat');
+  const pctHigh = a.pct_from_high_30d == null ? '—' : `${a.pct_from_high_30d.toFixed(2)}% from 30d high`;
+  const pctLow = a.pct_from_low_30d == null ? '—' : `${a.pct_from_low_30d.toFixed(2)}% from 30d low`;
+
+  document.getElementById('stats').innerHTML = [
+    card('Current', INR(cur), `Rate: ${payload.current_rate ? payload.current_rate.toExponential(4) : '—'}`),
+    card('7d avg', INR(a.ma_7d), 'Mean over last ~42 checks'),
+    card('30d avg', INR(a.ma_30d)),
+    card('Z-score (7d)', zDisplay, 'Std dev units from 7d mean'),
+    card('Trend (7d)', trend, 'Linear regression slope'),
+    card('30d high / low', INR(a.high_30d) + ' / ' + INR(a.low_30d), pctHigh + ' · ' + pctLow),
+  ].join('');
+}
+
+function renderAdvisory(a) {
+  const box = document.getElementById('advisory');
+  const msg = document.getElementById('advisory-msg');
+  box.classList.remove('convert','convert-soft','hold','hold-risky','neutral');
+  if (a && a.level) box.classList.add(a.level);
+  msg.textContent = (a && a.advisory) || 'Waiting for more data…';
+}
+
+function renderTable(records) {
+  const tbody = document.querySelector('#history-table tbody');
+  const last = records.slice(-20).reverse();
+  tbody.innerHTML = last.map(r => {
+    const dirClass = r.direction === 'UP' ? 'up' : r.direction === 'DOWN' ? 'down' : '';
+    return `<tr>
+      <td>${r.date} ${r.time.slice(0,5)}</td>
+      <td>${r.rate ? r.rate.toExponential(4) : '—'}</td>
+      <td>${INR(r.inr)}</td>
+      <td class="${dirClass}">${r.change > 0 ? '+' : ''}${INR(r.change)}</td>
+      <td class="${dirClass}">${r.pct_change > 0 ? '+' : ''}${r.pct_change.toFixed(2)}%</td>
+      <td class="${dirClass}">${r.direction || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function load() {
+  try {
+    const res = await fetch('data.json?t=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json();
+    fullHistory = payload.history || [];
+    analytics = payload.analytics;
+
+    document.getElementById('updated').textContent =
+      'Last updated: ' + (payload.updated_display || payload.updated_iso) +
+      `  ·  ${fullHistory.length} checks recorded`;
+
+    renderStats(payload);
+    renderAdvisory(analytics);
+    renderTable(fullHistory);
+    renderChart('7d');
+
+    document.getElementById('content').style.display = 'block';
+  } catch (e) {
+    document.getElementById('err').style.display = 'block';
+    document.getElementById('err').textContent =
+      'Could not load data.json. Make sure the tracker has run at least once. (' + e.message + ')';
+  }
+}
+
+document.getElementById('range-controls').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  document.querySelectorAll('#range-controls button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderChart(btn.dataset.range);
+});
+
+load();
+</script>
+</body>
+</html>

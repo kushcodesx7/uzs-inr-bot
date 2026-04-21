@@ -1,5 +1,6 @@
 import json
 import os
+import statistics
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from openpyxl.styles import Font, PatternFill
 
 STATE_FILE = Path("last_rate.json")
 HISTORY_FILE = Path("history.xlsx")
+DASHBOARD_DATA = Path("docs/data.json")
 TZ = ZoneInfo("Asia/Tashkent")
 ALERT_THRESHOLD_INR = 500.0
 RATE_API_URLS = [
@@ -20,6 +22,7 @@ RATE_API_URLS = [
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 CRON_HOURS_UTC = [0, 4, 8, 12, 16, 20]
 DIVIDER = "━━━━━━━━━━━━━━━━"
+CHECKS_PER_DAY = 6
 
 HEADERS = [
     "Date",
@@ -133,6 +136,118 @@ def todays_range(current_inr, today_str):
     return high, low
 
 
+def read_history():
+    if not HISTORY_FILE.exists():
+        return []
+    wb = load_workbook(HISTORY_FILE, read_only=True)
+    ws = wb.active
+    records = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or row[0] is None:
+            continue
+        date_v, time_v, rate_v, inr_v, change_v, pct_v, direction_v = (row + (None,) * 7)[:7]
+        if not isinstance(inr_v, (int, float)):
+            continue
+        records.append({
+            "date": str(date_v),
+            "time": str(time_v),
+            "rate": float(rate_v) if isinstance(rate_v, (int, float)) else None,
+            "inr": float(inr_v),
+            "change": float(change_v) if isinstance(change_v, (int, float)) else 0.0,
+            "pct_change": float(pct_v) if isinstance(pct_v, (int, float)) else 0.0,
+            "direction": str(direction_v) if direction_v else "",
+        })
+    wb.close()
+    return records
+
+
+def _linreg_slope(ys):
+    n = len(ys)
+    if n < 3:
+        return None
+    xs = list(range(n))
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    den = sum((x - mx) ** 2 for x in xs)
+    return num / den if den else 0.0
+
+
+def compute_analytics(records, current_inr):
+    inrs = [r["inr"] for r in records if r["inr"] is not None]
+    if not inrs:
+        return None
+
+    w24 = inrs[-CHECKS_PER_DAY:] if len(inrs) >= 2 else []
+    w7d = inrs[-CHECKS_PER_DAY * 7:] if len(inrs) >= 3 else []
+    w30d = inrs[-CHECKS_PER_DAY * 30:] if len(inrs) >= 5 else []
+
+    ma_24h = statistics.mean(w24) if len(w24) >= 2 else None
+    ma_7d = statistics.mean(w7d) if len(w7d) >= 3 else None
+    ma_30d = statistics.mean(w30d) if len(w30d) >= 5 else None
+    stddev_7d = statistics.pstdev(w7d) if len(w7d) >= 3 else None
+    slope_7d = _linreg_slope(w7d) if len(w7d) >= 3 else None
+
+    zscore = None
+    if ma_7d is not None and stddev_7d and stddev_7d > 0:
+        zscore = (current_inr - ma_7d) / stddev_7d
+
+    high_30d = max(w30d) if w30d else None
+    low_30d = min(w30d) if w30d else None
+    pct_from_high = ((current_inr - high_30d) / high_30d * 100) if high_30d else None
+    pct_from_low = ((current_inr - low_30d) / low_30d * 100) if low_30d else None
+
+    advisory = "Not enough history yet — tracking will improve signals over the next few days."
+    level = "neutral"
+    if zscore is not None and slope_7d is not None:
+        trending_up = slope_7d > 0
+        if zscore >= 1 and trending_up:
+            advisory = "ABOVE avg & rising — relatively favorable to convert UZS→INR; watch for reversal."
+            level = "convert"
+        elif zscore >= 1 and not trending_up:
+            advisory = "ABOVE avg but weakening — consider converting before it mean-reverts."
+            level = "convert-soft"
+        elif zscore <= -1 and trending_up:
+            advisory = "BELOW avg but turning up — patience may pay off, trend is improving."
+            level = "hold"
+        elif zscore <= -1 and not trending_up:
+            advisory = "BELOW avg & still falling — holding is risky; downtrend not exhausted."
+            level = "hold-risky"
+        else:
+            advisory = "Near recent average — no strong signal either way."
+            level = "neutral"
+
+    return {
+        "current_inr": current_inr,
+        "ma_24h": ma_24h,
+        "ma_7d": ma_7d,
+        "ma_30d": ma_30d,
+        "stddev_7d": stddev_7d,
+        "slope_7d": slope_7d,
+        "zscore": zscore,
+        "high_30d": high_30d,
+        "low_30d": low_30d,
+        "pct_from_high_30d": pct_from_high,
+        "pct_from_low_30d": pct_from_low,
+        "advisory": advisory,
+        "level": level,
+        "data_points": len(inrs),
+    }
+
+
+def write_dashboard_data(records, analytics, current_rate, now):
+    DASHBOARD_DATA.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "updated_iso": now.isoformat(),
+        "updated_display": now.strftime("%d %b %Y, %-I:%M %p %Z"),
+        "alert_threshold_inr": ALERT_THRESHOLD_INR,
+        "current_rate": current_rate,
+        "analytics": analytics,
+        "history": records,
+    }
+    DASHBOARD_DATA.write_text(json.dumps(payload, indent=2, default=str))
+
+
 def next_check_display(now, tz):
     now_utc = now.astimezone(timezone.utc)
     for h in CRON_HOURS_UTC:
@@ -159,7 +274,7 @@ def send_telegram(token, chat_id, text):
     return resp.json()
 
 
-def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check):
+def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check, analytics):
     date_display = now.strftime("%d %b %Y, %-I:%M %p")
     lines = [
         "💱 <b>UZS → INR Tracker</b>",
@@ -192,6 +307,18 @@ def build_message(now, inr_amount, change, pct_change, direction, prev, today_hi
         "📊 <b>Today's range:</b>",
         f"High: ₹{format_indian(today_high, 0)}",
         f"Low:  ₹{format_indian(today_low, 0)}",
+    ]
+    if analytics and analytics.get("ma_7d") is not None:
+        lines += ["", "🧮 <b>Signals (not a forecast):</b>"]
+        if analytics.get("ma_7d") is not None:
+            lines.append(f"7d avg: ₹{format_indian(analytics['ma_7d'], 0)}")
+        if analytics.get("zscore") is not None:
+            lines.append(f"Z-score vs 7d: {analytics['zscore']:+.2f}σ")
+        if analytics.get("slope_7d") is not None:
+            trend = "↗ rising" if analytics["slope_7d"] > 0 else ("↘ falling" if analytics["slope_7d"] < 0 else "→ flat")
+            lines.append(f"7d trend: {trend}")
+        lines.append(f"Advisor: <i>{analytics['advisory']}</i>")
+    lines += [
         "",
         DIVIDER,
         f"Next check: {next_check}",
@@ -240,9 +367,13 @@ def main():
     high, low = todays_range(inr_amount, date_str)
     next_check = next_check_display(now, TZ)
 
+    records = read_history()
+    analytics = compute_analytics(records, inr_amount)
+    write_dashboard_data(records, analytics, rate, now)
+
     should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
     if should_send:
-        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check)
+        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check, analytics)
         send_telegram(token, chat_id, msg)
         print(f"[{full_display}] Sent ({direction}): change={change:+.2f}")
     else:
