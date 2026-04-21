@@ -69,14 +69,111 @@
     </div>
   </section>
 
-  <section class="advisory reveal" id="advisory">
-    <div class="advisory-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  <section class="cockpit reveal">
+    <div class="verdict-card" id="verdict-card">
+      <div class="verdict-head">
+        <div class="eyebrow">Convert now?</div>
+        <div class="verdict-pill" id="verdict-pill">—</div>
+      </div>
+      <div class="verdict-score-wrap">
+        <div class="verdict-score">
+          <span class="score-num" id="verdict-score">0</span>
+          <span class="score-denom">/100</span>
+        </div>
+        <div class="score-bar">
+          <div class="score-fill" id="verdict-fill"></div>
+          <span class="score-tick" style="left:33%"></span>
+          <span class="score-tick" style="left:66%"></span>
+        </div>
+        <div class="score-scale">
+          <span>Bad moment</span>
+          <span>Okay</span>
+          <span>Good moment</span>
+        </div>
+      </div>
+      <div class="verdict-headline" id="verdict-headline">Gathering data…</div>
+      <div class="verdict-reasons" id="verdict-reasons"></div>
+      <div class="verdict-devil" id="verdict-devil" hidden>
+        <span class="devil-label">But wait —</span>
+        <span id="verdict-devil-msg"></span>
+      </div>
+      <div class="disclaimer">
+        This is a snapshot of where today sits in recent history.
+        It does <b>not</b> predict tomorrow's rate. Short-term FX is close to random — use your own judgement.
+      </div>
     </div>
-    <div class="advisory-body">
-      <div class="eyebrow">Decision signal · heuristic, not a forecast</div>
-      <div class="advisory-msg" id="advisory-msg">Loading…</div>
-      <div class="disclaimer">FX is near a random walk short-term. These signals describe where we are versus recent history — not where we're going.</div>
+
+    <div class="thermometer-card">
+      <div class="card-header" style="margin-bottom:8px">
+        <div>
+          <div class="card-title">Today's rank</div>
+          <div class="card-sub">Out of recent history · higher = better moment to convert</div>
+        </div>
+      </div>
+      <div class="thermo-grid" id="thermo-grid">
+        <!-- populated -->
+      </div>
+      <p class="helper">
+        <b>How to read this:</b> each bar shows how today compares to past days in that window.
+        A bar near the top means today's rate beats most of those days.
+      </p>
+    </div>
+  </section>
+
+  <section class="chart-card reveal regret-card">
+    <header class="card-header">
+      <div>
+        <div class="card-title">What if I wait? · Regret simulator</div>
+        <div class="card-sub">Based on your own history, here's the realistic range of what could happen</div>
+      </div>
+      <div class="segmented" id="regret-horizon" role="tablist">
+        <button data-horizon="1" role="tab">next check</button>
+        <button data-horizon="6" role="tab">3 hours</button>
+        <button data-horizon="24" class="active" role="tab">12 hours</button>
+        <button data-horizon="48" role="tab">1 day</button>
+      </div>
+    </header>
+
+    <div class="regret-body" id="regret-body">
+      <div class="regret-scenarios">
+        <div class="scenario bad">
+          <div class="scenario-label">😬 Unlucky case</div>
+          <div class="scenario-value" id="regret-bad-inr">—</div>
+          <div class="scenario-delta" id="regret-bad-delta">—</div>
+          <div class="scenario-hint">10th percentile (worst 1 in 10)</div>
+        </div>
+        <div class="scenario mid">
+          <div class="scenario-label">🎯 Typical case</div>
+          <div class="scenario-value" id="regret-mid-inr">—</div>
+          <div class="scenario-delta" id="regret-mid-delta">—</div>
+          <div class="scenario-hint">median of history</div>
+        </div>
+        <div class="scenario good">
+          <div class="scenario-label">🍀 Lucky case</div>
+          <div class="scenario-value" id="regret-good-inr">—</div>
+          <div class="scenario-delta" id="regret-good-delta">—</div>
+          <div class="scenario-hint">90th percentile (best 1 in 10)</div>
+        </div>
+      </div>
+
+      <div class="regret-slider-block">
+        <div class="slider-heads">
+          <span class="eyebrow">What if the rate moves by…</span>
+          <span class="mono" id="regret-pct-display">+0.00%</span>
+        </div>
+        <input type="range" id="regret-slider" min="-300" max="300" value="0" step="5"/>
+        <div class="slider-result">
+          <span class="muted">You'd get</span>
+          <b id="regret-result-inr" class="mono">—</b>
+          <span id="regret-result-delta" class="mono">—</span>
+        </div>
+      </div>
+
+      <p class="helper">
+        <b>How to read this:</b> slide to imagine the rate moving.
+        The three cards show what's realistic based on how your rate has actually wiggled before —
+        not a forecast, just the shape of history.
+      </p>
     </div>
   </section>
 

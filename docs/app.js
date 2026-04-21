@@ -541,14 +541,282 @@ function renderHero() {
   $('#hero-rate').textContent = last.rate ? last.rate.toExponential(4) : '—';
 }
 
-/* ---------------- Advisory ---------------- */
-function renderAdvisory() {
-  const a = currentPayload?.analytics;
-  const box = $('#advisory');
-  box.classList.remove('convert', 'convert-soft', 'hold', 'hold-risky');
-  if (a?.level) box.classList.add(a.level);
-  $('#advisory-msg').textContent = a?.advisory || 'Waiting for more data…';
+/* ---------------- Decision cockpit ---------------- */
+const MIN_POINTS_FOR_VERDICT = 10;
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Returns the percentile (0–100) of `target` within `values`.
+// e.g. 87 means today beats 87% of the historical values provided.
+function percentileRank(values, target) {
+  if (!values.length) return null;
+  const below = values.filter((v) => v <= target).length;
+  return (below / values.length) * 100;
 }
+
+function sliceWithinDays(hist, days) {
+  const cutoff = Date.now() - days * 86400 * 1000;
+  return hist.filter((r) => tsOf(r) >= cutoff);
+}
+
+function mean(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
+function stddev(arr) {
+  if (arr.length < 2) return 0;
+  const m = mean(arr);
+  return Math.sqrt(arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length);
+}
+function sorted(arr) { return arr.slice().sort((a, b) => a - b); }
+function percentileOf(sortedArr, p) {
+  if (!sortedArr.length) return null;
+  const idx = clamp(Math.round((p / 100) * (sortedArr.length - 1)), 0, sortedArr.length - 1);
+  return sortedArr[idx];
+}
+
+/* Compute the verdict score and reasons */
+function computeVerdict() {
+  const hist = fullHistory;
+  if (hist.length < MIN_POINTS_FOR_VERDICT) {
+    return {
+      ready: false,
+      needed: MIN_POINTS_FOR_VERDICT - hist.length,
+    };
+  }
+
+  const cur = hist.at(-1).inr;
+  const a = currentPayload?.analytics || {};
+
+  // Component 1 — rank in last 30 days (how does today compare?)
+  const pool30d = sliceWithinDays(hist, 30).map((r) => r.inr);
+  const rank30 = percentileRank(pool30d, cur) ?? 50;
+
+  // Component 2 — unusualness (z-score → 0..100, clamped at ±2σ)
+  const z = a.zscore;
+  const zScore100 = z == null ? 50 : clamp(50 + (z / 2) * 50, 0, 100);
+
+  // Component 3 — recent direction (trend slope sign+magnitude, normalised)
+  let trend100 = 50;
+  if (a.slope_7d != null && a.stddev_7d) {
+    const normSlope = a.slope_7d / (a.stddev_7d || 1);
+    trend100 = clamp(50 + Math.tanh(normSlope) * 45, 0, 100);
+  }
+
+  // Component 4 — closeness to 30-day peak
+  let peak100 = 50;
+  if (a.high_30d && a.low_30d && a.high_30d > a.low_30d) {
+    peak100 = ((cur - a.low_30d) / (a.high_30d - a.low_30d)) * 100;
+  } else if (pool30d.length) {
+    const hi = Math.max(...pool30d), lo = Math.min(...pool30d);
+    if (hi > lo) peak100 = ((cur - lo) / (hi - lo)) * 100;
+  }
+
+  const score = Math.round(0.40 * rank30 + 0.25 * zScore100 + 0.20 * trend100 + 0.15 * peak100);
+
+  const level = score >= 66 ? 'good' : score >= 33 ? 'mid' : 'bad';
+  const pill = { good: 'Good moment', mid: 'Okay', bad: 'Poor moment' }[level];
+
+  const reasons = [];
+  if (rank30 >= 70) reasons.push({ type: 'pos', text: `Today beats <b>${Math.round(rank30)}%</b> of the last 30 days.` });
+  else if (rank30 <= 30) reasons.push({ type: 'neg', text: `Today only beats <b>${Math.round(rank30)}%</b> of the last 30 days — below average.` });
+  else reasons.push({ type: 'neu', text: `Today is mid-pack: better than <b>${Math.round(rank30)}%</b> of the last 30 days.` });
+
+  if (z != null) {
+    if (z >= 1) reasons.push({ type: 'pos', text: `Unusually high vs the recent week (<b>+${z.toFixed(2)}σ</b> above average).` });
+    else if (z <= -1) reasons.push({ type: 'neg', text: `Unusually low vs the recent week (<b>${z.toFixed(2)}σ</b> below average).` });
+    else reasons.push({ type: 'neu', text: `Close to the weekly average.` });
+  }
+
+  if (a.slope_7d != null) {
+    if (a.slope_7d > 0) reasons.push({ type: 'pos', text: `The rate has been <b>climbing</b> across the last week.` });
+    else if (a.slope_7d < 0) reasons.push({ type: 'neg', text: `The rate has been <b>falling</b> across the last week.` });
+    else reasons.push({ type: 'neu', text: `No clear direction this week — sideways.` });
+  }
+
+  let devil = null;
+  if (level === 'good') {
+    if (a.slope_7d != null && a.slope_7d > 0) {
+      devil = 'the rate is still trending up — if that continues, waiting could still pay off.';
+    } else if (peak100 < 95) {
+      devil = `you're still ${(100 - peak100).toFixed(0)}% below the 30-day peak — there might be room to rise.`;
+    }
+  } else if (level === 'bad') {
+    if (a.slope_7d != null && a.slope_7d < 0) {
+      devil = "the rate is still falling — waiting is risky if the downtrend isn't done.";
+    } else {
+      devil = "if you need INR soon, waiting has its own risks — rates can keep sliding.";
+    }
+  }
+
+  const headline = {
+    good: 'Today looks like a <b>relatively good</b> moment to convert.',
+    mid: 'Today is an <b>ordinary</b> moment — no strong signal either way.',
+    bad: 'Today looks like a <b>below-average</b> moment to convert.',
+  }[level];
+
+  return { ready: true, score, level, pill, headline, reasons: reasons.slice(0, 3), devil };
+}
+
+function renderVerdict() {
+  const v = computeVerdict();
+  const card = $('#verdict-card');
+  const pill = $('#verdict-pill');
+  const scoreEl = $('#verdict-score');
+  const fill = $('#verdict-fill');
+  const headline = $('#verdict-headline');
+  const reasons = $('#verdict-reasons');
+  const devilBox = $('#verdict-devil');
+
+  card.classList.remove('level-good', 'level-mid', 'level-bad');
+  pill.classList.remove('good', 'mid', 'bad');
+
+  if (!v.ready) {
+    scoreEl.textContent = '—';
+    fill.style.width = '0%';
+    pill.textContent = 'Warming up';
+    headline.innerHTML = `Gathering data — need <b>${v.needed}</b> more check${v.needed === 1 ? '' : 's'} to compute a verdict.`;
+    reasons.innerHTML = '';
+    devilBox.hidden = true;
+    return;
+  }
+
+  card.classList.add(`level-${v.level}`);
+  pill.classList.add(v.level);
+  pill.textContent = v.pill;
+  animateScore(scoreEl, v.score);
+  fill.style.width = `${v.score}%`;
+  headline.innerHTML = v.headline;
+  reasons.innerHTML = v.reasons
+    .map((r) => `<div class="verdict-reason ${r.type}"><span class="bullet">${r.type === 'pos' ? '+' : r.type === 'neg' ? '−' : '•'}</span><span>${r.text}</span></div>`)
+    .join('');
+  if (v.devil) {
+    devilBox.hidden = false;
+    $('#verdict-devil-msg').textContent = v.devil;
+  } else {
+    devilBox.hidden = true;
+  }
+}
+
+function animateScore(el, target, duration = 1000) {
+  const start = parseFloat(el.textContent) || 0;
+  const startTime = performance.now();
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  function tick(now) {
+    const p = Math.min(1, (now - startTime) / duration);
+    el.textContent = Math.round(start + (target - start) * ease(p));
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- Percentile thermometer ---------------- */
+function renderThermometer() {
+  const hist = fullHistory;
+  const cur = hist.at(-1)?.inr;
+  const windows = [
+    { label: '24h', days: 1, min: 4 },
+    { label: '7 days', days: 7, min: 8 },
+    { label: '30 days', days: 30, min: 12 },
+  ];
+  const grid = $('#thermo-grid');
+  grid.innerHTML = windows
+    .map((w) => {
+      const pool = sliceWithinDays(hist, w.days).map((r) => r.inr);
+      let body;
+      if (!cur || pool.length < w.min) {
+        body = `<div class="thermo-bar"><div class="thermo-fill" style="height:0%"></div></div>
+                <div class="thermo-label">${w.label}</div>
+                <div class="thermo-value">—</div>
+                <div class="thermo-verdict muted">need ${w.min - pool.length} more checks</div>`;
+      } else {
+        const pct = percentileRank(pool, cur);
+        const verdict = pct >= 80 ? 'Top zone — relatively great'
+          : pct >= 60 ? 'Above average for this window'
+          : pct >= 40 ? 'Middle of the pack'
+          : pct >= 20 ? 'Below average'
+          : 'Low end — worse than most';
+        body = `<div class="thermo-bar">
+                  <div class="thermo-fill" style="height:${pct}%"></div>
+                  <div class="thermo-marker" style="bottom:${pct}%"></div>
+                </div>
+                <div class="thermo-label">${w.label}</div>
+                <div class="thermo-value">${Math.round(pct)}<span style="font-size:14px;color:var(--muted)">th %ile</span></div>
+                <div class="thermo-verdict">${verdict}</div>`;
+      }
+      return `<div class="thermo-cell">${body}</div>`;
+    })
+    .join('');
+}
+
+/* ---------------- Regret simulator ---------------- */
+let regretHorizonChecks = 24; // default: 24 checks ≈ 12 hours at 30-min cron
+let regretPctSlider = 0;
+
+/* Sample realistic "what-if" INR values using historical rolling windows. */
+function simulateHorizon(n) {
+  const hist = fullHistory.map((r) => r.inr);
+  if (hist.length < n + 4) return null;
+  const outcomes = [];
+  for (let i = 0; i + n < hist.length; i++) {
+    const start = hist[i];
+    const end = hist[i + n];
+    if (start > 0) outcomes.push(end / start); // ratio of rates
+  }
+  if (outcomes.length < 3) return null;
+  const s = sorted(outcomes);
+  return {
+    p10: percentileOf(s, 10),
+    p50: percentileOf(s, 50),
+    p90: percentileOf(s, 90),
+    samples: outcomes.length,
+  };
+}
+
+function renderRegret() {
+  const hist = fullHistory;
+  const cur = hist.at(-1)?.inr;
+  if (!cur) return;
+
+  const sim = simulateHorizon(regretHorizonChecks);
+  const setCell = (key, ratio) => {
+    const inrEl = $(`#regret-${key}-inr`);
+    const deltaEl = $(`#regret-${key}-delta`);
+    if (ratio == null) {
+      inrEl.textContent = '—';
+      deltaEl.textContent = 'not enough data yet';
+      return;
+    }
+    const v = cur * ratio;
+    const delta = v - cur;
+    inrEl.textContent = INR(v);
+    const sign = delta >= 0 ? '+' : '−';
+    deltaEl.textContent = `${sign}${INR(Math.abs(delta))} (${PCT((ratio - 1) * 100)})`;
+  };
+  setCell('bad', sim?.p10);
+  setCell('mid', sim?.p50);
+  setCell('good', sim?.p90);
+
+  // Slider: show INR for an arbitrary % move
+  const pctMove = regretPctSlider / 100; // slider value is already in "tenths of %" (min -300 = -3%)
+  const newInr = cur * (1 + pctMove / 100);
+  const diff = newInr - cur;
+  $('#regret-pct-display').textContent = `${pctMove >= 0 ? '+' : ''}${pctMove.toFixed(2)}%`;
+  $('#regret-result-inr').textContent = INR(newInr);
+  const deltaEl = $('#regret-result-delta');
+  deltaEl.textContent = `${diff >= 0 ? '+' : '−'}${INR(Math.abs(diff))}`;
+  deltaEl.className = 'mono ' + (diff >= 0 ? 'up' : diff < 0 ? 'down' : '');
+}
+
+$('#regret-slider').addEventListener('input', (e) => {
+  regretPctSlider = parseInt(e.target.value, 10);
+  renderRegret();
+});
+$('#regret-horizon').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-horizon]');
+  if (!btn) return;
+  $$('#regret-horizon button').forEach((b) => b.classList.remove('active'));
+  btn.classList.add('active');
+  regretHorizonChecks = parseInt(btn.dataset.horizon, 10);
+  renderRegret();
+});
 
 /* ---------------- Table + search ---------------- */
 function renderTable(filter = '') {
@@ -637,7 +905,9 @@ async function load() {
   }
 
   safe(renderHero, 'hero');
-  safe(renderAdvisory, 'advisory');
+  safe(renderVerdict, 'verdict');
+  safe(renderThermometer, 'thermometer');
+  safe(renderRegret, 'regret');
   safe(renderStats, 'stats');
   safe(renderTable, 'table');
   if (typeof echarts === 'undefined') return;
