@@ -313,13 +313,35 @@ def build_message(now, inr_amount, change, pct_change, direction, prev, today_hi
         lines.append(
             f"Alerts fire when change exceeds ₹{format_indian(ALERT_THRESHOLD_INR, 0)}."
         )
-    else:
-        emoji = {"UP": "📈", "DOWN": "📉", "FLAT": "➖"}.get(direction, "")
-        sign = "+" if change >= 0 else "-"
-        label = "UP" if direction == "UP" else ("DOWN" if direction == "DOWN" else "FLAT")
-        lines.append(f"{emoji} <b>{label}</b> from last check")
+    elif direction == "UP":
+        lines.append("📈 <b>RATE WENT UP — good news</b>")
         lines.append(
-            f"Change: {sign}₹{format_indian(abs(change), 0)} ({sign}{abs(pct_change):.2f}%)"
+            f"Up <b>+₹{format_indian(abs(change), 0)}</b> ({pct_change:+.2f}%) from last check"
+        )
+        lines.append("")
+        prev_time = prev.get("timestamp_time", "—")
+        lines.append(
+            f"Was: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time}) → Now: ₹{format_indian(inr_amount, 0)}"
+        )
+        lines.append("")
+        lines.append("💚 <i>You'd get more INR than before. Today is a better moment if you're converting.</i>")
+    elif direction == "DOWN":
+        lines.append("📉 <b>RATE WENT DOWN — heads up</b>")
+        lines.append(
+            f"Down <b>−₹{format_indian(abs(change), 0)}</b> ({pct_change:+.2f}%) from last check"
+        )
+        lines.append("")
+        prev_time = prev.get("timestamp_time", "—")
+        lines.append(
+            f"Was: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time}) → Now: ₹{format_indian(inr_amount, 0)}"
+        )
+        lines.append("")
+        lines.append("🟠 <i>You'd get less INR than before. Wait for recovery, or lock in if you need to convert soon.</i>")
+    else:
+        emoji = {"FLAT": "➖"}.get(direction, "")
+        lines.append(f"{emoji} <b>FLAT</b> from last check")
+        lines.append(
+            f"Change: ₹{format_indian(abs(change), 0)} ({pct_change:+.2f}%)"
         )
         lines.append("")
         prev_time = prev.get("timestamp_time", "—")
