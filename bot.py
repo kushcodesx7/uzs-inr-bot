@@ -15,9 +15,36 @@ HISTORY_FILE = Path("history.xlsx")
 DASHBOARD_DATA = Path("docs/data.json")
 TZ = ZoneInfo("Asia/Tashkent")
 ALERT_THRESHOLD_INR = 500.0
-RATE_API_URLS = [
-    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/uzs.json",
-    "https://latest.currency-api.pages.dev/v1/currencies/uzs.json",
+RATE_SOURCES = [
+    # Wise live rate — near-real-time (few-minute lag), same feed powering
+    # Wise's own UZS→INR widget, which is what Google's converter mirrors.
+    {
+        "name": "wise",
+        "url": "https://wise.com/rates/live?source=UZS&target=INR",
+        "parser": lambda d: d["value"],
+        "headers": {"User-Agent": "Mozilla/5.0 (compatible; UZS-INR-Tracker)"},
+    },
+    # open.er-api.com — hourly update, free, no key.
+    {
+        "name": "er-api",
+        "url": "https://open.er-api.com/v6/latest/UZS",
+        "parser": lambda d: d["rates"]["INR"],
+        "headers": None,
+    },
+    # fawazahmed0/currency-api via jsDelivr — daily aggregate, reliable backup.
+    {
+        "name": "fawazahmed0-jsdelivr",
+        "url": "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/uzs.json",
+        "parser": lambda d: d["uzs"]["inr"],
+        "headers": None,
+    },
+    # Same data via pages.dev CDN — last-resort fallback.
+    {
+        "name": "fawazahmed0-pages",
+        "url": "https://latest.currency-api.pages.dev/v1/currencies/uzs.json",
+        "parser": lambda d: d["uzs"]["inr"],
+        "headers": None,
+    },
 ]
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 CRON_INTERVAL_MIN = 30
@@ -63,19 +90,19 @@ def format_indian(n, decimals=2):
 
 def fetch_rate():
     last_err = None
-    for url in RATE_API_URLS:
+    for src in RATE_SOURCES:
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(src["url"], timeout=30, headers=src.get("headers") or {})
             resp.raise_for_status()
-            data = resp.json()
-            inr = data.get("uzs", {}).get("inr")
-            if inr is None:
-                raise RuntimeError(f"INR rate missing in response from {url}")
-            return float(inr)
+            rate = float(src["parser"](resp.json()))
+            if rate <= 0:
+                raise RuntimeError(f"non-positive rate {rate}")
+            print(f"[rate] source={src['name']} value={rate}", file=sys.stderr)
+            return rate, src["name"]
         except Exception as e:
             last_err = e
-            print(f"Rate fetch failed from {url}: {e}", file=sys.stderr)
-    raise RuntimeError(f"All rate endpoints failed: {last_err}")
+            print(f"[rate] {src['name']} failed: {e}", file=sys.stderr)
+    raise RuntimeError(f"All rate sources failed: {last_err}")
 
 
 def load_state():
@@ -332,7 +359,7 @@ def main():
         print(f"Missing required env var: {e}", file=sys.stderr)
         sys.exit(1)
 
-    rate = fetch_rate()
+    rate, source = fetch_rate()
     inr_amount = amount_uzs * rate
 
     now = datetime.now(TZ)
@@ -342,6 +369,8 @@ def main():
     full_display = now.strftime("%Y-%m-%d %H:%M %Z")
 
     prev = load_state()
+    prev_source = (prev or {}).get("source")
+    source_switched = bool(prev_source) and prev_source != source
 
     if prev is None:
         direction = "START"
@@ -368,13 +397,21 @@ def main():
     analytics = compute_analytics(records, inr_amount)
     write_dashboard_data(records, analytics, rate, now)
 
-    should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
+    # Baseline-only alert when the rate source changes, because different
+    # sources have slightly different mid-market rates and the numeric
+    # delta between them isn't a real market move.
+    if source_switched:
+        print(f"[{full_display}] Source switched {prev_source} -> {source}; skipping alert to avoid false positive.")
+        should_send = False
+    else:
+        should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
+
     if should_send:
         msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check, analytics)
         send_telegram(token, chat_id, msg)
-        print(f"[{full_display}] Sent ({direction}): change={change:+.2f}")
+        print(f"[{full_display}] Sent ({direction}) via {source}: change={change:+.2f}")
     else:
-        print(f"[{full_display}] No alert: change={change:+.2f} under ₹{ALERT_THRESHOLD_INR:.0f}")
+        print(f"[{full_display}] No alert via {source}: change={change:+.2f} under ₹{ALERT_THRESHOLD_INR:.0f}")
 
     save_state({
         "rate": rate,
@@ -382,6 +419,7 @@ def main():
         "timestamp": now.isoformat(),
         "timestamp_display": full_display,
         "timestamp_time": time_display,
+        "source": source,
     })
 
 
