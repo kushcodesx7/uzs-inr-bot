@@ -88,6 +88,35 @@ def format_indian(n, decimals=2):
     return f"{out}.{dec_part}" if dec_part else out
 
 
+def build_history_table(records, limit=6):
+    """Render the last N checks as a monospace-aligned Telegram <pre> block
+    with 🟢/🔴/⚪ markers for up/down/flat so the user can eyeball the trend."""
+    if not records:
+        return ""
+    recent = records[-limit:]
+    rows = [
+        f"{'Time':<6} {'INR':<11}  Δ",
+        "─" * 26,
+    ]
+    last_idx = len(recent) - 1
+    for i, r in enumerate(recent):
+        t = (r.get("time") or "")[:5]  # HH:MM
+        inr_str = f"₹{format_indian(r.get('inr', 0), 0)}"
+        change = r.get("change") or 0
+        direction = r.get("direction", "")
+        if direction == "START":
+            marker, delta_str = "⚪", "start"
+        elif direction == "UP":
+            marker, delta_str = "🟢", f"+{format_indian(abs(change), 0)}"
+        elif direction == "DOWN":
+            marker, delta_str = "🔴", f"−{format_indian(abs(change), 0)}"
+        else:
+            marker, delta_str = "⚪", "flat"
+        suffix = "  ← now" if i == last_idx else ""
+        rows.append(f"{t:<6} {inr_str:<11}  {marker} {delta_str}{suffix}")
+    return "<pre>" + "\n".join(rows) + "</pre>"
+
+
 def fetch_rate():
     last_err = None
     for src in RATE_SOURCES:
@@ -298,7 +327,7 @@ def send_telegram(token, chat_id, text):
     return resp.json()
 
 
-def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check, analytics):
+def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check, analytics, history_table=""):
     date_display = now.strftime("%d %b %Y, %-I:%M %p")
     lines = [
         "💱 <b>UZS → INR Tracker</b>",
@@ -348,6 +377,8 @@ def build_message(now, inr_amount, change, pct_change, direction, prev, today_hi
         lines.append(
             f"Last check: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time})"
         )
+    if history_table:
+        lines += ["", "📜 <b>Recent checks:</b>", history_table]
     lines += [
         "",
         "📊 <b>Today's range:</b>",
@@ -429,7 +460,8 @@ def main():
         should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
 
     if should_send:
-        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check, analytics)
+        history_table = build_history_table(records, limit=6)
+        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check, analytics, history_table=history_table)
         send_telegram(token, chat_id, msg)
         print(f"[{full_display}] Sent ({direction}) via {source}: change={change:+.2f}")
     else:
