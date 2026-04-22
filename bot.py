@@ -1,7 +1,9 @@
+import html
 import json
 import os
 import statistics
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -361,7 +363,7 @@ def build_message(inr_amount, change, direction, records):
     return headline + ("\n\n" + table if table else "")
 
 
-def main():
+def _run_tracker():
     try:
         token = os.environ["BOT_TOKEN"]
         chat_id = os.environ["CHAT_ID"]
@@ -429,6 +431,28 @@ def main():
         "timestamp_time": time_display,
         "source": source,
     })
+
+
+def main():
+    try:
+        _run_tracker()
+    except SystemExit:
+        raise
+    except Exception:
+        # Best-effort: tell the user Telegram-side that the tracker is broken,
+        # so silent failures don't go unnoticed. Still exit non-zero afterwards
+        # so the workflow surfaces the failure.
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        token = os.environ.get("BOT_TOKEN", "")
+        chat_id = os.environ.get("CHAT_ID", "")
+        if token and chat_id:
+            safe_tb = html.escape(tb[-1000:])
+            try:
+                send_telegram(token, chat_id, f"⚠️ <b>Tracker error</b>\n<pre>{safe_tb}</pre>")
+            except Exception as e:
+                print(f"Also failed to send error Telegram: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
