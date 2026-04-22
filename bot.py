@@ -88,33 +88,51 @@ def format_indian(n, decimals=2):
     return f"{out}.{dec_part}" if dec_part else out
 
 
-def build_history_table(records, limit=6):
-    """Render the last N checks as a monospace-aligned Telegram <pre> block
-    with 🟢/🔴/⚪ markers for up/down/flat so the user can eyeball the trend."""
+def build_history_table(records, limit=12):
+    """Render the last N checks as a date-grouped diary <pre> block with
+    🟢/🔴/⚪ markers. Most recent date first; within a day, newest check on top.
+    The very latest row is tagged "← now"."""
     if not records:
         return ""
     recent = records[-limit:]
-    rows = [
-        f"{'Time':<6} {'INR':<11}  Δ",
-        "─" * 26,
-    ]
-    last_idx = len(recent) - 1
-    for i, r in enumerate(recent):
-        t = (r.get("time") or "")[:5]  # HH:MM
-        inr_str = f"₹{format_indian(r.get('inr', 0), 0)}"
-        change = r.get("change") or 0
-        direction = r.get("direction", "")
-        if direction == "START":
-            marker, delta_str = "⚪", "start"
-        elif direction == "UP":
-            marker, delta_str = "🟢", f"+{format_indian(abs(change), 0)}"
-        elif direction == "DOWN":
-            marker, delta_str = "🔴", f"−{format_indian(abs(change), 0)}"
-        else:
-            marker, delta_str = "⚪", "flat"
-        suffix = "  ← now" if i == last_idx else ""
-        rows.append(f"{t:<6} {inr_str:<11}  {marker} {delta_str}{suffix}")
-    return "<pre>" + "\n".join(rows) + "</pre>"
+    latest = recent[-1]
+
+    groups = {}
+    order = []
+    for r in recent:
+        d = r.get("date", "")
+        if d not in groups:
+            groups[d] = []
+            order.append(d)
+        groups[d].append(r)
+
+    lines = []
+    for i, date_str in enumerate(reversed(order)):
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            header = dt.strftime("%d %b").lstrip("0")
+        except ValueError:
+            header = date_str
+        if i > 0:
+            lines.append("")
+        lines.append(f"━ {header} ━")
+        for r in reversed(groups[date_str]):
+            t = (r.get("time") or "")[:5]
+            inr_str = f"₹{format_indian(r.get('inr', 0), 0)}"
+            change = r.get("change") or 0
+            direction = r.get("direction", "")
+            if direction == "START":
+                marker, delta_str = "⚪", "start"
+            elif direction == "UP":
+                marker, delta_str = "🟢", f"+{format_indian(abs(change), 0)}"
+            elif direction == "DOWN":
+                marker, delta_str = "🔴", f"−{format_indian(abs(change), 0)}"
+            else:
+                marker, delta_str = "⚪", "flat"
+            is_now = (r is latest)
+            suffix = "   ← now" if is_now else ""
+            lines.append(f"  {t}   {inr_str:<11}  {marker} {delta_str}{suffix}")
+    return "<pre>" + "\n".join(lines) + "</pre>"
 
 
 def fetch_rate():
@@ -327,80 +345,20 @@ def send_telegram(token, chat_id, text):
     return resp.json()
 
 
-def build_message(now, inr_amount, change, pct_change, direction, prev, today_high, today_low, next_check, analytics, history_table=""):
-    date_display = now.strftime("%d %b %Y, %-I:%M %p")
-    lines = [
-        "💱 <b>UZS → INR Tracker</b>",
-        DIVIDER,
-        f"📅 {date_display}",
-        "",
-        f"You'd get: <b>₹{format_indian(inr_amount, 0)}</b>",
-        "",
-    ]
+def build_message(inr_amount, change, direction, records):
+    """Minimal alert: one-line headline + date-grouped diary of recent checks."""
+    amount_str = format_indian(inr_amount, 0)
     if direction == "START":
-        lines.append("🟢 <b>Baseline set</b>")
-        lines.append(
-            f"Alerts fire when change exceeds ₹{format_indian(ALERT_THRESHOLD_INR, 0)}."
-        )
+        headline = f"💱 <b>₹{amount_str}</b>  ·  baseline set"
     elif direction == "UP":
-        lines.append("📈 <b>RATE WENT UP — good news</b>")
-        lines.append(
-            f"Up <b>+₹{format_indian(abs(change), 0)}</b> ({pct_change:+.2f}%) from last check"
-        )
-        lines.append("")
-        prev_time = prev.get("timestamp_time", "—")
-        lines.append(
-            f"Was: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time}) → Now: ₹{format_indian(inr_amount, 0)}"
-        )
-        lines.append("")
-        lines.append("💚 <i>You'd get more INR than before. Today is a better moment if you're converting.</i>")
+        headline = f"💱 <b>₹{amount_str}</b>   🟢 +₹{format_indian(abs(change), 0)}"
     elif direction == "DOWN":
-        lines.append("📉 <b>RATE WENT DOWN — heads up</b>")
-        lines.append(
-            f"Down <b>−₹{format_indian(abs(change), 0)}</b> ({pct_change:+.2f}%) from last check"
-        )
-        lines.append("")
-        prev_time = prev.get("timestamp_time", "—")
-        lines.append(
-            f"Was: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time}) → Now: ₹{format_indian(inr_amount, 0)}"
-        )
-        lines.append("")
-        lines.append("🟠 <i>You'd get less INR than before. Wait for recovery, or lock in if you need to convert soon.</i>")
+        headline = f"💱 <b>₹{amount_str}</b>   🔴 −₹{format_indian(abs(change), 0)}"
     else:
-        emoji = {"FLAT": "➖"}.get(direction, "")
-        lines.append(f"{emoji} <b>FLAT</b> from last check")
-        lines.append(
-            f"Change: ₹{format_indian(abs(change), 0)} ({pct_change:+.2f}%)"
-        )
-        lines.append("")
-        prev_time = prev.get("timestamp_time", "—")
-        lines.append(
-            f"Last check: ₹{format_indian(prev['inr_amount'], 0)} ({prev_time})"
-        )
-    if history_table:
-        lines += ["", "📜 <b>Recent checks:</b>", history_table]
-    lines += [
-        "",
-        "📊 <b>Today's range:</b>",
-        f"High: ₹{format_indian(today_high, 0)}",
-        f"Low:  ₹{format_indian(today_low, 0)}",
-    ]
-    if analytics and analytics.get("ma_7d") is not None:
-        lines += ["", "🧮 <b>Signals (not a forecast):</b>"]
-        if analytics.get("ma_7d") is not None:
-            lines.append(f"7d avg: ₹{format_indian(analytics['ma_7d'], 0)}")
-        if analytics.get("zscore") is not None:
-            lines.append(f"Z-score vs 7d: {analytics['zscore']:+.2f}σ")
-        if analytics.get("slope_7d") is not None:
-            trend = "↗ rising" if analytics["slope_7d"] > 0 else ("↘ falling" if analytics["slope_7d"] < 0 else "→ flat")
-            lines.append(f"7d trend: {trend}")
-        lines.append(f"Advisor: <i>{analytics['advisory']}</i>")
-    lines += [
-        "",
-        DIVIDER,
-        f"Next check: {next_check}",
-    ]
-    return "\n".join(lines)
+        headline = f"💱 <b>₹{amount_str}</b>"
+
+    table = build_history_table(records, limit=12)
+    return headline + ("\n\n" + table if table else "")
 
 
 def main():
@@ -443,9 +401,6 @@ def main():
     wb = open_workbook()
     log_row(wb, date_str, time_str, rate, inr_amount, change, pct_change, direction)
 
-    high, low = todays_range(inr_amount, date_str)
-    next_check = next_check_display(now, TZ)
-
     records = read_history()
     analytics = compute_analytics(records, inr_amount)
     write_dashboard_data(records, analytics, rate, now)
@@ -460,8 +415,7 @@ def main():
         should_send = direction == "START" or abs(change) > ALERT_THRESHOLD_INR
 
     if should_send:
-        history_table = build_history_table(records, limit=6)
-        msg = build_message(now, inr_amount, change, pct_change, direction, prev or {}, high, low, next_check, analytics, history_table=history_table)
+        msg = build_message(inr_amount, change, direction, records)
         send_telegram(token, chat_id, msg)
         print(f"[{full_display}] Sent ({direction}) via {source}: change={change:+.2f}")
     else:
