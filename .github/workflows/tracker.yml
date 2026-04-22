@@ -49,7 +49,9 @@ jobs:
               exit 0
             fi
             echo "Push failed, rebasing on latest main and retrying..."
-            git pull --rebase origin main || {
+            # The runner's just-computed state is always newer than whatever
+            # landed on main mid-run, so prefer our version on any conflict.
+            git pull --rebase -X theirs origin main || {
               echo "Rebase failed; aborting." >&2
               exit 1
             }
