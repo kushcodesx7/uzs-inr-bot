@@ -41,15 +41,19 @@ jobs:
           git add last_rate.json history.xlsx docs/data.json
           if git diff --cached --quiet; then
             echo "No state changes to commit."
-          else
-            git commit -m "chore: update tracker state [skip ci]"
-            for i in 1 2 3 4; do
-              if git push; then
-                exit 0
-              fi
-              echo "Push failed, retrying..."
-              sleep $((2 ** i))
-            done
-            echo "Push failed after retries" >&2
-            exit 1
+            exit 0
           fi
+          git commit -m "chore: update tracker state [skip ci]"
+          for i in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push failed, rebasing on latest main and retrying..."
+            git pull --rebase origin main || {
+              echo "Rebase failed; aborting." >&2
+              exit 1
+            }
+            sleep $((2 ** i))
+          done
+          echo "Push failed after retries" >&2
+          exit 1
