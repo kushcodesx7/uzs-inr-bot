@@ -38,24 +38,41 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add last_rate.json history.xlsx docs/data.json
-          if git diff --cached --quiet; then
+
+          # If nothing changed in any state file, nothing to do.
+          if git diff --quiet -- last_rate.json history.xlsx docs/data.json \
+            && git diff --cached --quiet -- last_rate.json history.xlsx docs/data.json; then
             echo "No state changes to commit."
             exit 0
           fi
-          git commit -m "chore: update tracker state [skip ci]"
+
+          # Stash our just-computed state, rebase the working tree onto the
+          # latest remote main, then restore our state on top. This avoids
+          # every rebase/merge conflict because we simply replace main's
+          # copies of the state files with the runner's freshly-computed
+          # ones — which are always the authoritative newest values.
+          TMPDIR=$(mktemp -d)
+          cp last_rate.json "$TMPDIR/last_rate.json"
+          cp history.xlsx "$TMPDIR/history.xlsx"
+          cp docs/data.json "$TMPDIR/data.json"
+
           for i in 1 2 3 4; do
-            if git push; then
+            git fetch origin main
+            git reset --hard origin/main
+            cp "$TMPDIR/last_rate.json" last_rate.json
+            cp "$TMPDIR/history.xlsx" history.xlsx
+            cp "$TMPDIR/data.json" docs/data.json
+            git add last_rate.json history.xlsx docs/data.json
+            if git diff --cached --quiet; then
+              echo "State matches latest main; nothing to commit."
               exit 0
             fi
-            echo "Push failed, rebasing on latest main and retrying..."
-            # The runner's just-computed state is always newer than whatever
-            # landed on main mid-run, so prefer our version on any conflict.
-            git pull --rebase -X theirs origin main || {
-              echo "Rebase failed; aborting." >&2
-              exit 1
-            }
+            git commit -m "chore: update tracker state [skip ci]"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push race (attempt $i). Re-syncing with latest main..."
             sleep $((2 ** i))
           done
-          echo "Push failed after retries" >&2
+          echo "Push failed after retries." >&2
           exit 1
