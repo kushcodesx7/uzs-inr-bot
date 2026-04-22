@@ -14,7 +14,7 @@ STATE_FILE = Path("last_rate.json")
 HISTORY_FILE = Path("history.xlsx")
 DASHBOARD_DATA = Path("docs/data.json")
 TZ = ZoneInfo("Asia/Tashkent")
-ALERT_THRESHOLD_INR = 500.0
+ALERT_THRESHOLD_INR = 200.0
 RATE_SOURCES = [
     # Wise live rate — near-real-time (few-minute lag), same feed powering
     # Wise's own UZS→INR widget, which is what Google's converter mirrors.
