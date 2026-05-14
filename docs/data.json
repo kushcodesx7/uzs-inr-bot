@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-05-14T15:58:10.022947+05:00",
-  "updated_display": "14 May 2026, 3:58 PM +05",
+  "updated_iso": "2026-05-14T18:00:14.008165+05:00",
+  "updated_display": "14 May 2026, 6:00 PM +05",
   "alert_threshold_inr": 200.0,
-  "current_rate": 0.00798063,
+  "current_rate": 0.00794092,
   "analytics": {
-    "current_inr": 159612.6,
-    "ma_24h": 157085.875,
-    "ma_7d": 157058.4822557377,
-    "ma_30d": 157058.4822557377,
-    "stddev_7d": 1370.530380256617,
-    "slope_7d": 4.2133199715778975,
-    "zscore": 1.8635980501096736,
+    "current_inr": 158818.40000000002,
+    "ma_24h": 157151.22083333333,
+    "ma_7d": 157064.23362091504,
+    "ma_30d": 157064.23362091504,
+    "stddev_7d": 1371.970832207339,
+    "slope_7d": 4.284551994865301,
+    "zscore": 1.2785741051526136,
     "high_30d": 159775.0,
     "low_30d": 152840.0,
-    "pct_from_high_30d": -0.1016429353778715,
-    "pct_from_low_30d": 4.431169850824395,
+    "pct_from_high_30d": -0.5987169457048829,
+    "pct_from_low_30d": 3.9115414812876366,
     "advisory": "ABOVE avg & rising \u2014 relatively favorable to convert UZS\u2192INR; watch for reversal.",
     "level": "convert",
-    "data_points": 305
+    "data_points": 306
   },
   "history": [
     {
@@ -2763,6 +2763,15 @@
       "inr": 159612.6,
       "change": -162.3999999999942,
       "pct_change": -0.1016429353778715,
+      "direction": "DOWN"
+    },
+    {
+      "date": "2026-05-14",
+      "time": "18:00:14",
+      "rate": 0.00794092,
+      "inr": 158818.4,
+      "change": -794.1999999999825,
+      "pct_change": -0.4975797650060098,
       "direction": "DOWN"
     }
   ]
