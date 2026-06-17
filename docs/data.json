@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-06-17T07:03:09.584600+05:00",
-  "updated_display": "17 Jun 2026, 7:03 AM +05",
+  "updated_iso": "2026-06-17T12:35:23.677424+05:00",
+  "updated_display": "17 Jun 2026, 12:35 PM +05",
   "alert_threshold_inr": 200.0,
-  "current_rate": 0.00787394,
+  "current_rate": 0.00783839,
   "analytics": {
-    "current_inr": 157478.8,
-    "ma_24h": 158621.31666666668,
-    "ma_7d": 158839.79226190475,
-    "ma_30d": 158006.76363157894,
-    "stddev_7d": 766.5697783366954,
-    "slope_7d": 0.5303161281342498,
-    "zscore": -1.7754316702359974,
+    "current_inr": 156767.80000000002,
+    "ma_24h": 158579.34166666667,
+    "ma_7d": 158843.0244047619,
+    "ma_30d": 158004.7292085386,
+    "stddev_7d": 755.4566309128028,
+    "slope_7d": 0.252187778783082,
+    "zscore": -2.746980196936569,
     "high_30d": 160692.2,
     "low_30d": 152840.0,
-    "pct_from_high_30d": -1.9997236953629502,
-    "pct_from_low_30d": 3.035069353572356,
+    "pct_from_high_30d": -2.442184499309857,
+    "pct_from_low_30d": 2.5698769955509144,
     "advisory": "BELOW avg but turning up \u2014 patience may pay off, trend is improving.",
     "level": "hold",
-    "data_points": 608
+    "data_points": 609
   },
   "history": [
     {
@@ -5490,6 +5490,15 @@
       "inr": 157478.8,
       "change": -75.79999999998836,
       "pct_change": -0.04811030588760237,
+      "direction": "DOWN"
+    },
+    {
+      "date": "2026-06-17",
+      "time": "12:35:23",
+      "rate": 0.00783839,
+      "inr": 156767.8,
+      "change": -710.9999999999709,
+      "pct_change": -0.4514893433274643,
       "direction": "DOWN"
     }
   ]
