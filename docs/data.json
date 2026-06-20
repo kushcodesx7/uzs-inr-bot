@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-06-21T02:22:27.515334+05:00",
-  "updated_display": "21 Jun 2026, 2:22 AM +05",
+  "updated_iso": "2026-06-21T03:44:09.398701+05:00",
+  "updated_display": "21 Jun 2026, 3:44 AM +05",
   "alert_threshold_inr": 200.0,
   "current_rate": 0.00782474,
   "analytics": {
     "current_inr": 156494.80000000002,
-    "ma_24h": 157171.6,
-    "ma_7d": 158752.62976190477,
-    "ma_30d": 157939.79825705328,
-    "stddev_7d": 929.8421896675047,
-    "slope_7d": -5.03258837225487,
-    "zscore": -2.428185972839232,
+    "ma_24h": 157121.17916666667,
+    "ma_7d": 158745.94226190477,
+    "ma_30d": 157937.53691392802,
+    "stddev_7d": 937.941061898287,
+    "slope_7d": -5.152804787001822,
+    "zscore": -2.4000892522486366,
     "high_30d": 160692.2,
     "low_30d": 152840.0,
     "pct_from_high_30d": -2.6120745126396887,
     "pct_from_low_30d": 2.391258832766303,
     "advisory": "BELOW avg & still falling \u2014 holding is risky; downtrend not exhausted.",
     "level": "hold-risky",
-    "data_points": 638
+    "data_points": 639
   },
   "history": [
     {
@@ -5756,6 +5756,15 @@
     {
       "date": "2026-06-21",
       "time": "02:22:27",
+      "rate": 0.00782474,
+      "inr": 156494.8,
+      "change": 0.0,
+      "pct_change": 0.0,
+      "direction": "FLAT"
+    },
+    {
+      "date": "2026-06-21",
+      "time": "03:44:09",
       "rate": 0.00782474,
       "inr": 156494.8,
       "change": 0.0,
