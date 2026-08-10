@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-08-11T03:42:13.320691+05:00",
-  "updated_display": "11 Aug 2026, 3:42 AM +05",
+  "updated_iso": "2026-08-11T04:39:04.783270+05:00",
+  "updated_display": "11 Aug 2026, 4:39 AM +05",
   "alert_threshold_inr": 200.0,
-  "current_rate": 0.00799595,
+  "current_rate": 0.00799616,
   "analytics": {
-    "current_inr": 159919.0,
-    "ma_24h": 159349.05833333335,
-    "ma_7d": 159728.37857142856,
-    "ma_30d": 158489.7594187755,
-    "stddev_7d": 588.2957128275634,
-    "slope_7d": -3.1926845425268393,
-    "zscore": 0.3240231475684936,
+    "current_inr": 159923.2,
+    "ma_24h": 159365.12083333335,
+    "ma_7d": 159729.41845238095,
+    "ma_30d": 158490.92861990212,
+    "stddev_7d": 588.3303597125581,
+    "slope_7d": -3.190601032564991,
+    "zscore": 0.3293754000961896,
     "high_30d": 161323.4,
     "low_30d": 152840.0,
-    "pct_from_high_30d": -0.8705494677151574,
-    "pct_from_low_30d": 4.631640931693274,
+    "pct_from_high_30d": -0.8679460016339741,
+    "pct_from_low_30d": 4.634388903428429,
     "advisory": "Near recent average \u2014 no strong signal either way.",
     "level": "neutral",
-    "data_points": 1225
+    "data_points": 1226
   },
   "history": [
     {
@@ -11043,6 +11043,15 @@
       "inr": 159919.0,
       "change": 64.60000000000582,
       "pct_change": 0.04041177471499428,
+      "direction": "UP"
+    },
+    {
+      "date": "2026-08-11",
+      "time": "04:39:04",
+      "rate": 0.00799616,
+      "inr": 159923.2,
+      "change": 4.200000000011642,
+      "pct_change": 0.002626329579356825,
       "direction": "UP"
     }
   ]
