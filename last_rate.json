@@ -1,8 +1,8 @@
 {
-  "rate": 0.00806956,
-  "inr_amount": 161391.2,
-  "timestamp": "2026-08-24T04:48:22.273395+05:00",
-  "timestamp_display": "2026-08-24 04:48 +05",
-  "timestamp_time": "4:48 AM",
+  "rate": 0.00806673,
+  "inr_amount": 161334.59999999998,
+  "timestamp": "2026-08-24T06:40:23.800812+05:00",
+  "timestamp_display": "2026-08-24 06:40 +05",
+  "timestamp_time": "6:40 AM",
   "source": "wise"
 }
