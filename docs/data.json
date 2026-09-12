@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-09-13T02:34:13.583135+05:00",
-  "updated_display": "13 Sep 2026, 2:34 AM +05",
+  "updated_iso": "2026-09-13T04:52:24.701850+05:00",
+  "updated_display": "13 Sep 2026, 4:52 AM +05",
   "alert_threshold_inr": 200.0,
   "current_rate": 0.00812664,
   "analytics": {
     "current_inr": 162532.8,
-    "ma_24h": 161301.63333333333,
-    "ma_7d": 161489.82261904763,
-    "ma_30d": 159715.54236111112,
-    "stddev_7d": 578.2682094905658,
-    "slope_7d": -2.4379975704352246,
-    "zscore": 1.8036222013158705,
+    "ma_24h": 161349.25,
+    "ma_7d": 161493.52202380952,
+    "ma_30d": 159718.9751388889,
+    "stddev_7d": 580.9465271194013,
+    "slope_7d": -2.393393893187721,
+    "zscore": 1.7889391323908646,
     "high_30d": 162665.8,
     "low_30d": 156081.4,
     "pct_from_high_30d": -0.08176273070307342,
     "pct_from_low_30d": 4.133356056519223,
     "advisory": "ABOVE avg but weakening \u2014 consider converting before it mean-reverts.",
     "level": "convert-soft",
-    "data_points": 1732
+    "data_points": 1733
   },
   "history": [
     {
@@ -15602,6 +15602,15 @@
     {
       "date": "2026-09-13",
       "time": "02:34:13",
+      "rate": 0.00812664,
+      "inr": 162532.8,
+      "change": 0.0,
+      "pct_change": 0.0,
+      "direction": "FLAT"
+    },
+    {
+      "date": "2026-09-13",
+      "time": "04:52:24",
       "rate": 0.00812664,
       "inr": 162532.8,
       "change": 0.0,
