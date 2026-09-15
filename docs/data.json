@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-09-15T03:39:42.500616+05:00",
-  "updated_display": "15 Sep 2026, 3:39 AM +05",
+  "updated_iso": "2026-09-15T06:17:06.983175+05:00",
+  "updated_display": "15 Sep 2026, 6:17 AM +05",
   "alert_threshold_inr": 200.0,
-  "current_rate": 0.00812354,
+  "current_rate": 0.00814274,
   "analytics": {
-    "current_inr": 162470.80000000002,
-    "ma_24h": 161605.52083333334,
-    "ma_7d": 161509.67023809525,
-    "ma_30d": 159734.6588888889,
-    "stddev_7d": 597.9967417652429,
-    "slope_7d": -2.041697468570661,
-    "zscore": 1.6072491617054367,
+    "current_inr": 162854.80000000002,
+    "ma_24h": 161659.84583333333,
+    "ma_7d": 161512.5267857143,
+    "ma_30d": 159737.71069444445,
+    "stddev_7d": 602.108863354579,
+    "slope_7d": -1.949881020923354,
+    "zscore": 2.2292865891516853,
     "high_30d": 162897.4,
     "low_30d": 156081.4,
-    "pct_from_high_30d": -0.2618826328719652,
-    "pct_from_low_30d": 4.093633193961628,
+    "pct_from_high_30d": -0.026151430286779728,
+    "pct_from_low_30d": 4.339658665286206,
     "advisory": "ABOVE avg but weakening \u2014 consider converting before it mean-reverts.",
     "level": "convert-soft",
-    "data_points": 1738
+    "data_points": 1739
   },
   "history": [
     {
@@ -15661,6 +15661,15 @@
       "change": -288.9999999999709,
       "pct_change": -0.1775622727479211,
       "direction": "DOWN"
+    },
+    {
+      "date": "2026-09-15",
+      "time": "06:17:06",
+      "rate": 0.00814274,
+      "inr": 162854.8,
+      "change": 384.0,
+      "pct_change": 0.2363501626138358,
+      "direction": "UP"
     }
   ]
 }
