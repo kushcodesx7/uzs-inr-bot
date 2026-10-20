@@ -1,23 +1,23 @@
 {
-  "updated_iso": "2026-10-21T01:20:30.217656+05:00",
-  "updated_display": "21 Oct 2026, 1:20 AM +05",
+  "updated_iso": "2026-10-21T04:18:30.757609+05:00",
+  "updated_display": "21 Oct 2026, 4:18 AM +05",
   "alert_threshold_inr": 200.0,
-  "current_rate": 0.0078913,
+  "current_rate": 0.00788888,
   "analytics": {
-    "current_inr": 157826.0,
-    "ma_24h": 158320.60416666666,
-    "ma_7d": 161413.45357142857,
-    "ma_30d": 160061.58805555556,
-    "stddev_7d": 1594.3969063527563,
-    "slope_7d": -3.5260086806324495,
-    "zscore": -2.2500379655370826,
+    "current_inr": 157777.59999999998,
+    "ma_24h": 158256.48333333334,
+    "ma_7d": 161401.00119047618,
+    "ma_30d": 160060.95375,
+    "stddev_7d": 1606.3610238075692,
+    "slope_7d": -3.689448412874162,
+    "zscore": -2.2556580599096128,
     "high_30d": 164240.0,
     "low_30d": 156081.4,
-    "pct_from_high_30d": -3.905260594252314,
-    "pct_from_low_30d": 1.1177500970647405,
+    "pct_from_high_30d": -3.9347296639064924,
+    "pct_from_low_30d": 1.0867406366165235,
     "advisory": "BELOW avg & still falling \u2014 holding is risky; downtrend not exhausted.",
     "level": "hold-risky",
-    "data_points": 1926
+    "data_points": 1927
   },
   "history": [
     {
@@ -17353,6 +17353,15 @@
       "change": 70.79999999998836,
       "pct_change": 0.04487966165298408,
       "direction": "UP"
+    },
+    {
+      "date": "2026-10-21",
+      "time": "04:18:30",
+      "rate": 0.00788888,
+      "inr": 157777.6,
+      "change": -48.40000000002328,
+      "pct_change": -0.0306666835629258,
+      "direction": "DOWN"
     }
   ]
 }
